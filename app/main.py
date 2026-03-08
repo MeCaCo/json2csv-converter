@@ -5,6 +5,7 @@ import shutil
 import uuid
 from pathlib import Path
 from sqlalchemy.orm import Session
+import subprocess  # ← ДОБАВЛЕНО для Go
 
 from . import models, schemas
 from .database import engine, get_db
@@ -92,4 +93,72 @@ def download_file(file_id: str, db: Session = Depends(get_db)):
         path=file_path,
         filename=file_record.original_filename,
         media_type="application/json"
+    )
+
+
+# ========== НОВЫЕ ЭНДПОИНТЫ ДЛЯ GO ==========
+
+@app.post("/convert/{file_id}")
+async def convert_file(file_id: str, db: Session = Depends(get_db)):
+    # Находим запись в БД
+    file_record = db.query(models.Conversion).filter(models.Conversion.file_id == file_id).first()
+    if not file_record:
+        raise HTTPException(404, "Файл не найден")
+
+    # Пути к файлам
+    input_path = UPLOAD_DIR / file_record.filename
+    if not input_path.exists():
+        raise HTTPException(404, "Файл не найден на диске")
+
+    # Создаём имя для CSV
+    csv_filename = f"{file_id}.csv"
+    csv_path = UPLOAD_DIR / csv_filename
+
+    # Запускаем Go-конвертер
+    try:
+        # Путь к конвертеру (из корня проекта)
+        converter_path = Path("C:/Projects PY GO/json2csv_converter/converter/converter.exe")
+
+        result = subprocess.run(
+            [str(converter_path), str(input_path), str(csv_path)],
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+
+        if result.returncode != 0:
+            raise HTTPException(500, f"Ошибка конвертации: {result.stderr}")
+
+    except Exception as e:
+        raise HTTPException(500, f"Ошибка запуска конвертера: {str(e)}")
+
+    # Обновляем запись в БД
+    file_record.status = "converted"
+    file_record.csv_filename = csv_filename
+    db.commit()
+
+    return {
+        "message": "Конвертация завершена",
+        "file_id": file_id,
+        "csv_filename": csv_filename
+    }
+
+
+@app.get("/download-csv/{file_id}")
+def download_csv(file_id: str, db: Session = Depends(get_db)):
+    file_record = db.query(models.Conversion).filter(models.Conversion.file_id == file_id).first()
+    if not file_record or not file_record.csv_filename:
+        raise HTTPException(404, "CSV файл не найден")
+
+    csv_path = UPLOAD_DIR / file_record.csv_filename
+    if not csv_path.exists():
+        raise HTTPException(404, "CSV файл не найден на диске")
+
+    # Формируем имя для скачивания
+    download_name = file_record.original_filename.replace('.json', '.csv')
+
+    return FileResponse(
+        path=csv_path,
+        filename=download_name,
+        media_type="text/csv"
     )
