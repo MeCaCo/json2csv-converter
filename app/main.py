@@ -5,18 +5,15 @@ import shutil
 import uuid
 from pathlib import Path
 from sqlalchemy.orm import Session
-import subprocess  # ← ДОБАВЛЕНО для Go
+import subprocess
 
-from . import models, schemas
-from .database import engine, get_db
-
-# Создаём таблицы в базе данных
-models.Base.metadata.create_all(bind=engine)
+import models, schemas
+from database import engine, get_db
 
 app = FastAPI(title="JSON to CSV Converter")
 
 # Создаём папку для загрузок, если её нет
-UPLOAD_DIR = Path("app/uploads")
+UPLOAD_DIR = Path("/app/uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
 
 
@@ -117,7 +114,7 @@ async def convert_file(file_id: str, db: Session = Depends(get_db)):
     # Запускаем Go-конвертер
     try:
         # Путь к конвертеру (из корня проекта)
-        converter_path = Path("C:/Projects PY GO/json2csv_converter/converter/converter.exe")
+        converter_path = Path("/converter/converter.exe")  # внутри контейнера
 
         result = subprocess.run(
             [str(converter_path), str(input_path), str(csv_path)],
