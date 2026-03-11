@@ -9,9 +9,29 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: json2csv
     ports:
-      - "5433:5432"
+      - "5433:5432"  # наружу 5433, внутри 5432
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: ./app
+    container_name: json2csv_app
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/json2csv
+    volumes:
+      - ./app/uploads:/app/uploads  # только для загрузок
+      - ./converter:/converter       # для Go
+    depends_on:
+      db:
+        condition: service_healthy
+    command: uvicorn main:app --host 0.0.0.0 --port 8000
 
 volumes:
   postgres_data:
